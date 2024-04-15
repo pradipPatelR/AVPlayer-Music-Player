@@ -2,8 +2,6 @@
 //  ResourceLoaderDelegate.swift
 //  CachingPlayerItem
 //
-//  Created by Gorjan Shukov on 10/24/20.
-//
 
 import Foundation
 import AVFoundation
