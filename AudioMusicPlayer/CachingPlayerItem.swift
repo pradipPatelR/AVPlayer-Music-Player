@@ -35,7 +35,7 @@ import AVFoundation
 }
 
 /// AVPlayerItem subclass that supports caching while playing.
-public final class CachingPlayerItem: AVPlayerItem {
+@objc public final class CachingPlayerItem: AVPlayerItem {
     
     static var cachingPlayerItemSchemeKey: String { return "cachingPlayerItemScheme" }
 
@@ -43,13 +43,15 @@ public final class CachingPlayerItem: AVPlayerItem {
     private let url: URL
     private let initialScheme: String?
     private let saveFilePath: String
-    private var customFileExtension: String?
+    public private(set) var customFileExtension: String?
     /// HTTPHeaderFields set in avUrlAssetOptions using AVURLAssetHTTPHeaderFieldsKey
     internal var urlRequestHeaders: [String: String]?
 
+    @objc public private(set) var isComingLocalInit: Bool = false
+    
     /// Useful for keeping relevant model associated with CachingPlayerItem instance. This is a **strong** reference, be mindful not to create a **retain cycle**.
-    public var passOnObject: Any?
-    public weak var delegate: CachingPlayerItemDelegate?
+    @objc public var passOnObject: Any?
+    @objc public weak var delegate: CachingPlayerItemDelegate?
 
     // MARK: Public init
 
@@ -179,7 +181,7 @@ public final class CachingPlayerItem: AVPlayerItem {
 
             try? FileManager.default.createSymbolicLink(at: url, withDestinationURL: filePathURL)
         } else {
-            assert(filePathURL.pathExtension.isEmpty == false,
+            debugPrint(filePathURL.pathExtension.isEmpty == false,
                    "CachingPlayerItem error: filePathURL pathExtension empty, pass the extension in `fileExtension` parameter")
             self.url = filePathURL
         }
@@ -187,6 +189,7 @@ public final class CachingPlayerItem: AVPlayerItem {
         // Not needed properties when playing media from a local file.
         self.saveFilePath = ""
         self.initialScheme = nil
+        self.isComingLocalInit = true
 
         super.init(asset: AVURLAsset(url: url), automaticallyLoadedAssetKeys: nil)
 
@@ -215,10 +218,10 @@ public final class CachingPlayerItem: AVPlayerItem {
     // MARK: Public methods
 
     /// Downloads the media file. Works only with the initializers intended for play and cache.
-    public func download() {
+    @objc public func download() {
         // Make sure we are not initilalized with a filePath or non-caching init.
         guard initialScheme != nil else {
-            assertionFailure("CachingPlayerItem error: Download method used on a non caching instance")
+            debugPrint("CachingPlayerItem error: Download method used on a non caching instance")
             return
         }
 
@@ -322,19 +325,12 @@ extension URL {
     }
 }
 
-extension String {
-    
-    fileprivate var md5String: String {
-        return "\(self.utf8.md5)"
-    }
-    
-}
 
 extension CachingPlayerItem {
 
     static var folderName: String { return "com.CachingPlayerItem.CachingPlayerItem" }
     
-    static func removeCachingFolder() {
+    @objc public static func removeCachingFolder() {
         guard let saveFilePath = try? FileManager.default.url(for: .cachesDirectory,
                                                                  in: .userDomainMask,
                                                                  appropriateFor: nil,
@@ -342,12 +338,21 @@ extension CachingPlayerItem {
         
         
         let folderPath = saveFilePath.appendingPathComponent(Self.folderName)
-        if !FileManager.default.fileExists(atPath: folderPath.filePath) {
+        if FileManager.default.fileExists(atPath: folderPath.filePath) {
             try? FileManager.default.removeItem(at: folderPath)
         }
     }
     
-    convenience init(playerURL ofURL: URL) {
+    @objc public static func initPlayerURL(urlString: String, avUrlAssetOptions: [String : Any]? = nil) -> CachingPlayerItem? {
+        guard let url = URL.urlInit(with: urlString) else { return nil }
+        
+        if url.pathExtension.count > 0 {
+            return CachingPlayerItem(playerURL: url, defaultFileExtension: url.pathExtension, avUrlAssetOptions: avUrlAssetOptions)
+        }
+        return CachingPlayerItem(playerURL: url, avUrlAssetOptions: avUrlAssetOptions)
+    }
+    
+    @objc public convenience init(playerURL ofURL: URL, defaultFileExtension: String = "mp3", avUrlAssetOptions: [String : Any]? = nil) {
         var saveFilePath = try! FileManager.default.url(for: .cachesDirectory,
                                                                  in: .userDomainMask,
                                                                  appropriateFor: nil,
@@ -369,8 +374,9 @@ extension CachingPlayerItem {
         var fileExtension = ofURL.pathExtension
         
         if fileExtension.trimmingCharacters(in: .whitespacesAndNewlines).count <= 0 {
-            fileExtension = "mp3"
+            fileExtension = defaultFileExtension
         }
+        
         
         saveFilePath.appendPathComponent(ofURL.absoluteString.md5String)
         saveFilePath.appendPathExtension(fileExtension)
@@ -379,7 +385,7 @@ extension CachingPlayerItem {
             self.init(filePathURL: saveFilePath)
             debugPrint("Playing from cached local file.")
         } else {
-            self.init(url: ofURL, saveFilePath: saveFilePath.filePath, customFileExtension: fileExtension)
+            self.init(url: ofURL, saveFilePath: saveFilePath.filePath, customFileExtension: fileExtension, avUrlAssetOptions: avUrlAssetOptions)
             debugPrint("Playing from remote url.")
         }
 
