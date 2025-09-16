@@ -12,12 +12,11 @@ fileprivate var sharedInstanceSingletone: AudioMusicPlayer!
 
 extension AudioMusicPlayer {
     
+    private static var saveKey: String { return "com.CachingPlayerItem.cachingPlayerItem.Time" }
     
-    private var saveKey: String { return "com.CachingPlayerItem.Time" }
-    
-    func checkIfNeededCachingPlayerClear() {
-        if UserDefaults.standard.value(forKey: saveKey) == nil {
-            UserDefaults.standard.setValue(Date().timeIntervalSince1970, forKey: saveKey)
+    static func checkIfNeededCachingPlayerClear() {
+        if UserDefaults.standard.value(forKey: Self.saveKey) == nil {
+            UserDefaults.standard.setValue(Date().timeIntervalSince1970, forKey: Self.saveKey)
             UserDefaults.standard.synchronize()
         }
         
@@ -26,6 +25,10 @@ extension AudioMusicPlayer {
         if (saveTimeInterval + (24 * 60 * 60)) < Date().timeIntervalSince1970 {
             CachingPlayerItem.removeCachingFolder()
         }
+    }
+    
+    func checkIfNeededCachingPlayerClear() {
+        Self.checkIfNeededCachingPlayerClear()
     }
     
     
@@ -62,14 +65,13 @@ final class AudioMusicPlayer: NSObject {
     public private(set) var nextIsEnabled: Bool = false
     public private(set) var previousIsEnabled: Bool = false
     
-    
-    public var nextIsEnabledChangeClouser: ((Bool) -> Void)?
-    public var previousIsEnabledChangeClouser: ((Bool) -> Void)?
-    public var changeValueCallBackClouser: (() -> Void)?
-    public var avPlayerDidEndFinishTimeClouser: (() -> Void)?
-    public var playPauseChangeClouser: (() -> Void)?
-    public var changeMpPlayerNextPreviousClouser: (() -> Void)?
-    public var avPlayerBufferingClouser: ((Bool) -> Void)?
+    public var nextIsEnabledChangeClouser: [((Bool) -> Void)?] = []
+    public var previousIsEnabledChangeClouser: [((Bool) -> Void)?] = []
+    public var changeValueCallBackClouser: [(() -> Void)?] = []
+    public var avPlayerDidEndFinishTimeClouser: [(() -> Void)?] = []
+    public var playPauseChangeClouser: [(() -> Void)?] = []
+    public var changeMpPlayerNextPreviousClouser: [(() -> Void)?] = []
+    public var avPlayerBufferingClouser: [((Bool) -> Void)?] = []
     
     public var currentSongString: String? {
         
@@ -196,31 +198,31 @@ final class AudioMusicPlayer: NSObject {
         
         remoteCommandCenter.togglePlayPauseCommand.addTarget { [weak self] event in
             self?.playPauseCommand()
-            self?.playPauseChangeClouser?()
+            self?.playPauseChangeClouser.forEach({ $0?() })
             return .success
         }
         
         remoteCommandCenter.playCommand.addTarget { [weak self] event in
             self?.playPauseCommand()
-            self?.playPauseChangeClouser?()
+            self?.playPauseChangeClouser.forEach({ $0?() })
             return .success
         }
         
         remoteCommandCenter.pauseCommand.addTarget { [weak self] event in
             self?.playPauseCommand()
-            self?.playPauseChangeClouser?()
+            self?.playPauseChangeClouser.forEach({ $0?() })
             return .success
         }
         
         remoteCommandCenter.nextTrackCommand.addTarget { [weak self] event in
             self?.nextPreviousPlaying(true, playIndex: nil)
-            self?.changeMpPlayerNextPreviousClouser?()
+            self?.changeMpPlayerNextPreviousClouser.forEach({ $0?() })
             return .success
         }
         
         remoteCommandCenter.previousTrackCommand.addTarget { [weak self] event in
             self?.nextPreviousPlaying(false, playIndex: nil)
-            self?.changeMpPlayerNextPreviousClouser?()
+            self?.changeMpPlayerNextPreviousClouser.forEach({ $0?() })
             return .success
         }
         
@@ -251,6 +253,24 @@ final class AudioMusicPlayer: NSObject {
     
     func setupMPRemoteCommandSetupAndImage(_ setImageByURLString: (urlString:String, image:UIImage?)?) {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = self.nowPlayingSetMPNowPlayingInfo(setImageByURLString)
+    }
+    
+    func updateMusicPlayer(_songListItem: [SongListItem]) {
+        self.songListItem = _songListItem
+        
+        if songListItem.count > 2 {
+            self.changeSongListItem = self.isSuffle ? self.arrayListShuffle(self.songListItem) : self.songListItem
+        } else {
+            self.changeSongListItem = self.songListItem
+        }
+    }
+    
+    func playAtSongIndex(_ playIndex: Int) {
+        if self.changeSongListItem.indices.contains(playIndex) {
+            self.isFirstTimePlayingPause = true
+            
+            self.nextPreviousPlaying(nil, playIndex: playIndex, isChangeIndexForceFull: true)
+        }
     }
     
     func setupMusicPlayer(_songListItem: [SongListItem], _playIndex: Int, isFirstTimePlayingPause: Bool = false) {
@@ -297,6 +317,8 @@ final class AudioMusicPlayer: NSObject {
         
     }
     
+    //MARK:- Public Methods
+    
     @objc func musicPlayerSetSeek(sliderValue: Float, completion: (() -> Void)? = nil) {
         let seekTime = CMTime(seconds: Double(sliderValue), preferredTimescale: 1)
         if self.musicPlayer == nil { return }
@@ -306,7 +328,6 @@ final class AudioMusicPlayer: NSObject {
         
     }
     
-    //MARK:- Public Methods
     func changeSuffleMode(_ _isSuffle: Bool) -> Bool {
         if self.songListItem.count > 2 {
             self.isSuffle = _isSuffle
@@ -318,8 +339,8 @@ final class AudioMusicPlayer: NSObject {
                     
                     self.nextIsEnabled = !(idx == (self.changeSongListItem.count - 1))
                     self.previousIsEnabled = !(idx == 0)
-                    self.nextIsEnabledChangeClouser?(self.nextIsEnabled)
-                    self.previousIsEnabledChangeClouser?(self.previousIsEnabled)
+                    self.nextIsEnabledChangeClouser.forEach({ $0?(self.nextIsEnabled) })
+                    self.previousIsEnabledChangeClouser.forEach({ $0?(self.previousIsEnabled) })
                     
                 }
                 
@@ -372,7 +393,7 @@ final class AudioMusicPlayer: NSObject {
         self.currentSecond = 0
         self.bufferProgress = 0
         
-        self.changeValueCallBackClouser?()
+        self.changeValueCallBackClouser.forEach({ $0?() })
         
         guard isMPRemoteCommandCenterEnable else { return }
 
@@ -383,7 +404,7 @@ final class AudioMusicPlayer: NSObject {
             
     }
     
-    func nextPreviousPlaying(_ nextPreviousButtonClicked: Bool?, playIndex: Int?) {
+    private func nextPreviousPlaying(_ nextPreviousButtonClicked: Bool?, playIndex: Int?, isChangeIndexForceFull: Bool = false) {
         
         var idx: Int = 0
         
@@ -410,23 +431,25 @@ final class AudioMusicPlayer: NSObject {
             checkCondition = getNextPreviousButtonClicked ? ((idx >= 0) && (idx <= (self.changeSongListItem.count - 1))) : ((idx >= 0) && (idx <= (self.changeSongListItem.count - 1)))
         } else {
             
-            switch self.repeatMode {
-            case .none:
-                return
-            case .one:
-                
-                if self.musicPlayer != nil, self.musicPlayer?.currentItem != nil {
-                    self.currentSecond = 0
-                    self.changeValueCallBackClouser?()
-                    self.musicPlayer?.currentItem?.seek(to: CMTime(seconds: 0, preferredTimescale: 1), completionHandler: { (bool) in
-                        self.musicPlayer?.play()
-                        
-                        self.playPauseChangeClouser?()
-                    })
+            if !isChangeIndexForceFull {    // this case is called when listing to direct play at perticular index of using `playAtSongIndex` function.
+                switch self.repeatMode {
+                case .none:
+                    return
+                case .one:
+                    
+                    if self.musicPlayer != nil, self.musicPlayer?.currentItem != nil {
+                        self.currentSecond = 0
+                        self.changeValueCallBackClouser.forEach({ $0?() })
+                        self.musicPlayer?.currentItem?.seek(to: CMTime(seconds: 0, preferredTimescale: 1), completionHandler: { (bool) in
+                            self.musicPlayer?.play()
+                            
+                            self.playPauseChangeClouser.forEach({ $0?() })
+                        })
+                    }
+                    return
+                case .all:
+                    break
                 }
-                return
-            case .all:
-                break
             }
         }
         
@@ -452,22 +475,22 @@ final class AudioMusicPlayer: NSObject {
                 
             })
             self.currentSecond = 0
-            self.changeValueCallBackClouser?()
-            self.playPauseChangeClouser?()
+            self.changeValueCallBackClouser.forEach({ $0?() })
+            self.playPauseChangeClouser.forEach({ $0?() })
             return
         }
         
         self.nextIsEnabled = !(idx == (self.changeSongListItem.count - 1))
         self.previousIsEnabled = !(idx == 0)
-        self.nextIsEnabledChangeClouser?(self.nextIsEnabled)
-        self.previousIsEnabledChangeClouser?(self.previousIsEnabled)
+        self.nextIsEnabledChangeClouser.forEach({ $0?(self.nextIsEnabled) })
+        self.previousIsEnabledChangeClouser.forEach({ $0?(self.previousIsEnabled) })
         
         self.totalSecond = 0
         self.currentSecond = 0
         self.bufferProgress = 0
         
         
-        self.changeValueCallBackClouser?()
+        self.changeValueCallBackClouser.forEach({ $0?() })
         
         if checkCondition {
             
@@ -486,7 +509,7 @@ final class AudioMusicPlayer: NSObject {
             musicPlayer?.currentItem?.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: .new, context: nil)
             musicPlayer?.currentItem?.addObserver(self, forKeyPath: "playbackBufferFull", options: .new, context: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(avPlayerDidFinish), name: .AVPlayerItemDidPlayToEndTime, object: avPlayerItem)
-            self.avPlayerBufferingClouser?(true)
+            self.avPlayerBufferingClouser.forEach({ $0?(true) })
             
             addPeriodicTime()
             
@@ -499,7 +522,7 @@ final class AudioMusicPlayer: NSObject {
         }
     }
     
-    func addPeriodicTime() {
+    private func addPeriodicTime() {
 //        let interval = CMTime(value: 1, timescale: 2)
         let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         if let mPlayer = self.musicPlayer {
@@ -534,22 +557,22 @@ final class AudioMusicPlayer: NSObject {
                     }
                     
                 }
-                self.changeValueCallBackClouser?()
+                self.changeValueCallBackClouser.forEach({ $0?() })
             })
         }
     }
     
-    @objc func avPlayerDidFinish(_ notification: NSNotification) {
+    @objc private func avPlayerDidFinish(_ notification: NSNotification) {
         
-        self.avPlayerDidEndFinishTimeClouser?()
+        self.avPlayerDidEndFinishTimeClouser.forEach({ $0?() })
         
         switch self.repeatMode {
         case .none:
             self.currentSecond = 0
-            self.changeValueCallBackClouser?()
+            self.changeValueCallBackClouser.forEach({ $0?() })
             self.musicPlayer?.currentItem?.seek(to: CMTime(seconds: 0, preferredTimescale: 1), completionHandler: { (bool) in
                 
-                self.playPauseChangeClouser?()
+                self.playPauseChangeClouser.forEach({ $0?() })
             })
         case .one:
             nextPreviousPlaying(nil, playIndex: nil)
@@ -571,7 +594,7 @@ final class AudioMusicPlayer: NSObject {
                     MPNowPlayingInfoCenter.default().playbackState = .stopped
                 }
                 
-                self.avPlayerBufferingClouser?(false)
+                self.avPlayerBufferingClouser.forEach({ $0?(false) })
                 return
             case .unknown:
                 self.error = nil
@@ -600,16 +623,16 @@ final class AudioMusicPlayer: NSObject {
             
             if mPlayer.currentItem?.isPlaybackLikelyToKeepUp ?? false {
                 debugPrint("Playing")
-                self.avPlayerBufferingClouser?(false)
+                self.avPlayerBufferingClouser.forEach({ $0?(false) })
             } else if mPlayer.currentItem?.isPlaybackBufferEmpty ?? false {
                 debugPrint("Buffer empty - show loader")
-                self.avPlayerBufferingClouser?(true)
+                self.avPlayerBufferingClouser.forEach({ $0?(true) })
             }  else if mPlayer.currentItem?.isPlaybackBufferFull ?? false {
                 debugPrint("Buffer full - hide loader")
-                self.avPlayerBufferingClouser?(false)
+                self.avPlayerBufferingClouser.forEach({ $0?(false) })
             } else {
                 debugPrint("Buffering")
-                self.avPlayerBufferingClouser?(true)
+                self.avPlayerBufferingClouser.forEach({ $0?(true) })
             }
         }
     }
@@ -624,6 +647,7 @@ extension AudioMusicPlayer: CachingPlayerItemDelegate {
         debugPrint(#function)
         debugPrint(filePath)
     }
+    
     func playerItem(_ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int, outOf bytesExpected: Int) {
         debugPrint(#function)
         debugPrint(bytesDownloaded, bytesExpected)
@@ -653,7 +677,7 @@ extension AudioMusicPlayer: CachingPlayerItemDelegate {
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.avPlayerBufferingClouser?(false)
+            self?.avPlayerBufferingClouser.forEach({ $0?(false) })
         }
         
     }
@@ -680,7 +704,6 @@ extension AudioMusicPlayer {
         
         return newArray
     }
-    
 }
 
 
@@ -691,7 +714,8 @@ class SongListItem: NSObject {
     let songArtistName: String
     let songImageString: String
     let url: URL
-    weak var img: UIImage?
+    var img: UIImage?
+    var anyItem: Any?
     
     //MARK:- Initializer
     init?(_urlString: String, _songTitleName: String, _songArtistName: String, _songImageString: String) {
