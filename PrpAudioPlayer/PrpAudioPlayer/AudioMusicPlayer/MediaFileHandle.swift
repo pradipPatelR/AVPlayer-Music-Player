@@ -8,8 +8,8 @@ import Foundation
 /// File handle for local file operations.
 final class MediaFileHandle {
     private let filePath: String
-    private lazy var readHandle = FileHandle(forReadingAtPath: filePath)
-    private lazy var writeHandle = FileHandle(forWritingAtPath: filePath)
+    private lazy var readHandle = FileHandle(forReadingAtPath: self.filePath)
+    private lazy var writeHandle = FileHandle(forWritingAtPath: self.filePath)
 
     private let lock = NSLock()
 
@@ -26,9 +26,9 @@ final class MediaFileHandle {
     }
 
     deinit {
-        guard FileManager.default.fileExists(atPath: filePath) else { return }
+        guard FileManager.default.fileExists(atPath: self.filePath) else { return }
 
-        close()
+        self.close()
     }
 }
 
@@ -45,44 +45,44 @@ extension MediaFileHandle {
     }
 
     var fileSize: Int {
-        return attributes?[.size] as? Int ?? 0
+        return self.attributes?[.size] as? Int ?? 0
     }
 
     func readData(withOffset offset: Int, forLength length: Int) -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
+        self.lock.lock()
+        defer { self.lock.unlock() }
 
-        readHandle?.seek(toFileOffset: UInt64(offset))
-        return readHandle?.readData(ofLength: length)
+        self.readHandle?.seek(toFileOffset: UInt64(offset))
+        return self.readHandle?.readData(ofLength: length)
     }
 
     func append(data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
+        self.lock.lock()
+        defer { self.lock.unlock() }
 
-        guard let writeHandle = writeHandle else { return }
+        guard let writeHandle = self.writeHandle else { return }
 
         writeHandle.seekToEndOfFile()
         writeHandle.write(data)
     }
 
     func synchronize() {
-        lock.lock()
-        defer { lock.unlock() }
+        self.lock.lock()
+        defer { self.lock.unlock() }
 
-        guard let writeHandle = writeHandle else { return }
+        guard let writeHandle = self.writeHandle else { return }
 
         writeHandle.synchronizeFile()
     }
 
     func close() {
-        readHandle?.closeFile()
-        writeHandle?.closeFile()
+        self.readHandle?.closeFile()
+        self.writeHandle?.closeFile()
     }
 
     func deleteFile() {
         do {
-            try FileManager.default.removeItem(atPath: filePath)
+            try FileManager.default.removeItem(atPath: self.filePath)
         } catch let error {
             print("File deletion error: \(error)")
         }

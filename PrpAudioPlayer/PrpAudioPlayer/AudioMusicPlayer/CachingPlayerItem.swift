@@ -100,7 +100,7 @@ import AVFoundation
     public init(url: URL, saveFilePath: String, customFileExtension: String?, avUrlAssetOptions: [String: Any]? = nil) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let scheme = components.scheme,
-              var urlWithCustomScheme = url.withScheme(Self.cachingPlayerItemSchemeKey) else {
+              var urlWithCustomScheme = url.audioMusicPlayer_withScheme(Self.cachingPlayerItemSchemeKey) else {
             fatalError("CachingPlayerItem error: Urls without a scheme are not supported")
         }
 
@@ -159,7 +159,7 @@ import AVFoundation
      */
     public convenience init(data: Data, customFileExtension: String) throws {
         let filePathURL = URL(fileURLWithPath: Self.randomFilePath(withExtension: customFileExtension))
-        FileManager.default.createFile(atPath: filePathURL.filePath, contents: nil, attributes: nil)
+        FileManager.default.createFile(atPath: filePathURL.audioMusicPlayer_filePath, contents: nil, attributes: nil)
         try data.write(to: filePathURL)
         self.init(filePathURL: filePathURL)
     }
@@ -304,26 +304,10 @@ import AVFoundation
         cachesDirectory.appendPathComponent(UUID().uuidString)
         cachesDirectory.appendPathExtension(fileExtension)
 
-        return cachesDirectory.filePath
+        return cachesDirectory.audioMusicPlayer_filePath
     }
 }
 
-
-extension URL {
-    fileprivate func withScheme(_ scheme: String) -> URL? {
-        var components = URLComponents(url: self, resolvingAgainstBaseURL: false)
-        components?.scheme = scheme
-        return components?.url
-    }
-    
-    fileprivate var filePath: String {
-        if #available(iOS 16.0, *) {
-            return self.path(percentEncoded: false)
-        } else {
-            return self.path
-        }
-    }
-}
 
 
 extension CachingPlayerItem {
@@ -338,13 +322,17 @@ extension CachingPlayerItem {
         
         
         let folderPath = saveFilePath.appendingPathComponent(Self.folderName)
-        if FileManager.default.fileExists(atPath: folderPath.filePath) {
+        if FileManager.default.fileExists(atPath: folderPath.audioMusicPlayer_filePath) {
             try? FileManager.default.removeItem(at: folderPath)
         }
     }
     
     @objc public static func initPlayerURL(urlString: String, avUrlAssetOptions: [String : Any]? = nil) -> CachingPlayerItem? {
-        guard let url = URL.urlInit(with: urlString) else { return nil }
+        guard let url = URL(string: urlString) ??
+                URL(string: urlString.trimmingCharacters(in: .whitespaces)) ??
+                URL(string: urlString.trimmingCharacters(in: .whitespaces).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString.trimmingCharacters(in: .whitespaces)) ??
+                URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) ??
+                URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
         
         if url.pathExtension.count > 0 {
             return CachingPlayerItem(playerURL: url, defaultFileExtension: url.pathExtension, avUrlAssetOptions: avUrlAssetOptions)
@@ -360,9 +348,9 @@ extension CachingPlayerItem {
         
         
         let folderPath = saveFilePath.appendingPathComponent(Self.folderName)
-        if !FileManager.default.fileExists(atPath: folderPath.filePath) {
+        if !FileManager.default.fileExists(atPath: folderPath.audioMusicPlayer_filePath) {
             do {
-                try FileManager.default.createDirectory(atPath: folderPath.filePath, withIntermediateDirectories: true, attributes: nil)
+                try FileManager.default.createDirectory(atPath: folderPath.audioMusicPlayer_filePath, withIntermediateDirectories: true, attributes: nil)
                 saveFilePath = folderPath
             } catch let err {
                 debugPrint(err.localizedDescription)
@@ -378,19 +366,36 @@ extension CachingPlayerItem {
         }
         
         
-        saveFilePath.appendPathComponent(ofURL.absoluteString.md5String)
+        saveFilePath.appendPathComponent(ofURL.absoluteString.audioMusicPlayer_md5String)
         saveFilePath.appendPathExtension(fileExtension)
         
-        if FileManager.default.fileExists(atPath: saveFilePath.filePath) {
+        if FileManager.default.fileExists(atPath: saveFilePath.audioMusicPlayer_filePath) {
             self.init(filePathURL: saveFilePath)
             debugPrint("Playing from cached local file.")
         } else {
-            self.init(url: ofURL, saveFilePath: saveFilePath.filePath, customFileExtension: fileExtension, avUrlAssetOptions: avUrlAssetOptions)
+            self.init(url: ofURL, saveFilePath: saveFilePath.audioMusicPlayer_filePath, customFileExtension: fileExtension, avUrlAssetOptions: avUrlAssetOptions)
             debugPrint("Playing from remote url.")
         }
 
         self.passOnObject = ofURL
-        debugPrint("saveFilePath url.", saveFilePath.filePath)
+        debugPrint("saveFilePath url.", saveFilePath.audioMusicPlayer_filePath)
     }
 }
 
+
+
+extension URL {
+    fileprivate func audioMusicPlayer_withScheme(_ scheme: String) -> URL? {
+        var components = URLComponents(url: self, resolvingAgainstBaseURL: false)
+        components?.scheme = scheme
+        return components?.url
+    }
+    
+    fileprivate var audioMusicPlayer_filePath: String {
+        if #available(iOS 16.0, *) {
+            return self.path(percentEncoded: false)
+        } else {
+            return self.path
+        }
+    }
+}

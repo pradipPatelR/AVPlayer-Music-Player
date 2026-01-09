@@ -1,51 +1,32 @@
 //
-//  CachingPlayerItemConfiguration.swift
-//  CachingPlayerItem
+//  AudioMusicPlayer+MD5String.swift
+//  PrpAudioPlayer
+//
+//  Created by Pradip on 30/12/25.
 //
 
-import Foundation
-
-/// CachingPlayerItem global configuration.
-public enum CachingPlayerItemConfiguration {
-    /// How much data is downloaded in memory before stored on a file.
-    public static var downloadBufferLimit: Int = 128.KB
-
-    /// How much data is allowed to be read in memory at a time.
-    public static var readDataLimit: Int = 10.MB
-
-    /// Flag for deciding whether an error should be thrown when URLResponse's expectedContentLength is not equal with the downloaded media file bytes count. Defaults to `false`.
-    public static var shouldVerifyDownloadedFileSize: Bool = false
-
-    /// If set greater than 0, the set value with be compared with the downloaded media size. If the size of the downloaded media is lower, an error will be thrown. Useful when `expectedContentLength` is unavailable.
-    /// Default value is `0`.
-    public static var minimumExpectedFileSize: Int = 0
-}
-
-fileprivate extension Int {
-    var KB: Int { return self * 1024 }
-    var MB: Int { return self * 1024 * 1024 }
-}
+import UIKit
 
 
 // MARK: - Public API
 extension String {
     fileprivate var md5Bytes: [UInt8] {
-        return self.data(using: .utf8, allowLossyConversion: true)?.bytes ?? Array(self.utf8)
+        return self.data(using: .utf8, allowLossyConversion: true)?.audioMusicPlayer_bytes ?? Array(self.utf8)
     }
 
     /// The hex MD5 string (lowercase)
-    var md5String: String {
-        return self.md5Bytes.md5().toHexString()
+    var audioMusicPlayer_md5String: String {
+        return self.md5Bytes.audioMusicPlayer_md5().audioMusicPlayer_toHexString()
     }
 }
 
 extension Data {
-    var bytes: [UInt8] { Array(self) }
+    var audioMusicPlayer_bytes: [UInt8] { Array(self) }
 }
 
 extension Array where Element == UInt8 {
     /// Convert bytes to hex string (lowercase)
-    public func toHexString() -> String {
+    public func audioMusicPlayer_toHexString() -> String {
         self.reduce(into: "") { acc, byte in
             let s = String(byte, radix: 16)
             acc += (s.count == 1) ? "0" + s : s
@@ -53,39 +34,30 @@ extension Array where Element == UInt8 {
     }
 
     /// Compute MD5 for this byte array (internal)
-    fileprivate func md5() -> [UInt8] {
-        return AudioURL_Digest.md5(self)
+    fileprivate func audioMusicPlayer_md5() -> [UInt8] {
+        return AudioMusicPlayer_Digest.md5(self)
     }
 }
 
 // MARK: - Digest entry
-public struct AudioURL_Digest {
+public struct AudioMusicPlayer_Digest {
     fileprivate static func md5(_ bytes: [UInt8]) -> [UInt8] {
-        return AudioURL_MD5().calculate(for: bytes)
+        return AudioMusicPlayer_MD5().calculate(for: bytes)
     }
 }
 
 // MARK: - Internal/Private MD5 implementation
 
-// Minimal protocol used by MD5
-internal protocol DigestType {
-    func calculate(for bytes: [UInt8]) -> [UInt8]
-}
-
-// Updatable protocol (kept simple for class implementation)
-protocol Updatable {
-    func update(withBytes bytes: ArraySlice<UInt8>, isLast: Bool) -> [UInt8]
-}
 
 // Fileprivate MD5 core
-fileprivate class AudioURL_MD5: DigestType, Updatable {
+fileprivate class AudioMusicPlayer_MD5 {
     static let blockSize: Int = 64
     static let digestLength: Int = 16
     fileprivate static let hashInitialValue: [UInt32] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476]
 
     fileprivate var accumulated = [UInt8]()
     fileprivate var processedBytesTotalCount: Int = 0
-    fileprivate var accumulatedHash: [UInt32] = AudioURL_MD5.hashInitialValue
+    fileprivate var accumulatedHash: [UInt32] = AudioMusicPlayer_MD5.hashInitialValue
 
     // per-round shift amounts
     private let s: [UInt32] = [
@@ -119,7 +91,7 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
 
     // DigestType conformance
     func calculate(for bytes: [UInt8]) -> [UInt8] {
-        return update(withBytes: bytes.bytesSlice, isLast: true)
+        return update(withBytes: bytes.audioMusicPlayer_bytesSlice, isLast: true)
     }
 
     // Updatable conformance: handle streaming updates and finalization
@@ -130,14 +102,14 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
         if isLast {
             // append padding and length
             let lengthInBits = (processedBytesTotalCount + self.accumulated.count) * 8
-            let lengthBytes = lengthInBits.bytes(totalBytes: 64 / 8) // 64-bit representation
-            bitPadding(to: &self.accumulated, blockSize: AudioURL_MD5.blockSize, allowance: 64 / 8)
+            let lengthBytes = lengthInBits.audioMusicPlayer_bytes(totalBytes: 64 / 8) // 64-bit representation
+            audioMusicPlayer_bitPadding(to: &self.accumulated, blockSize: AudioMusicPlayer_MD5.blockSize, allowance: 64 / 8)
             self.accumulated += lengthBytes.reversed()
         }
 
         // process full 64-byte (512-bit) chunks
         var processedBytes = 0
-        let chunkSize = AudioURL_MD5.blockSize
+        let chunkSize = AudioMusicPlayer_MD5.blockSize
         while (self.accumulated.count - processedBytes) >= chunkSize {
             let start = processedBytes
             let end = start + chunkSize
@@ -153,7 +125,7 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
 
         // produce current digest (little-endian concatenation)
         var result = [UInt8]()
-        result.reserveCapacity(AudioURL_MD5.digestLength)
+        result.reserveCapacity(AudioMusicPlayer_MD5.digestLength)
         for h in self.accumulatedHash {
             let hLE = h.littleEndian
             result += [UInt8(hLE & 0xff), UInt8((hLE >> 8) & 0xff), UInt8((hLE >> 16) & 0xff), UInt8((hLE >> 24) & 0xff)]
@@ -161,7 +133,7 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
 
         if isLast {
             // reset internal state for potential reuse
-            self.accumulatedHash = AudioURL_MD5.hashInitialValue
+            self.accumulatedHash = AudioMusicPlayer_MD5.hashInitialValue
         }
 
         return result
@@ -209,7 +181,7 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
             Mg |= UInt32(chunk[chunk.startIndex &+ gAdvanced &+ 2]) << 16
             Mg |= UInt32(chunk[chunk.startIndex &+ gAdvanced &+ 3]) << 24
 
-            B = B &+ rotateLeft(A &+ F &+ self.k[j] &+ Mg, by: self.s[j])
+            B = B &+ audioMusicPlayer_rotateLeft(A &+ F &+ self.k[j] &+ Mg, by: self.s[j])
             A = dTemp
         }
 
@@ -223,12 +195,12 @@ fileprivate class AudioURL_MD5: DigestType, Updatable {
 // MARK: - Helpers
 
 
-fileprivate func rotateLeft(_ value: UInt32, by: UInt32) -> UInt32 {
+fileprivate func audioMusicPlayer_rotateLeft(_ value: UInt32, by: UInt32) -> UInt32 {
     ((value << by) & 0xffffffff) | (value >> (32 - by))
 }
 
 
-fileprivate func bitPadding(to data: inout [UInt8], blockSize: Int, allowance: Int = 0) {
+fileprivate func audioMusicPlayer_bitPadding(to data: inout [UInt8], blockSize: Int, allowance: Int = 0) {
     let msgLength = data.count
     data.append(0x80)
     let max = blockSize - allowance
@@ -242,8 +214,8 @@ fileprivate func bitPadding(to data: inout [UInt8], blockSize: Int, allowance: I
 // FixedWidthInteger -> bytes helper (uses manual pointer copy to match expected byte order)
 fileprivate extension FixedWidthInteger {
     
-    func bytes(totalBytes: Int = MemoryLayout<Self>.size) -> [UInt8] {
-        arrayOfBytes(value: self.littleEndian, length: totalBytes)
+    func audioMusicPlayer_bytes(totalBytes: Int = MemoryLayout<Self>.size) -> [UInt8] {
+        audioMusicPlayer_arrayOfBytes(value: self.littleEndian, length: totalBytes)
     }
 }
 
@@ -253,7 +225,7 @@ fileprivate extension FixedWidthInteger {
 @_specialize(where T == UInt16)
 @_specialize(where T == UInt32)
 @_specialize(where T == UInt64)
-fileprivate func arrayOfBytes<T: FixedWidthInteger>(value: T, length totalBytes: Int = MemoryLayout<T>.size) -> [UInt8] {
+fileprivate func audioMusicPlayer_arrayOfBytes<T: FixedWidthInteger>(value: T, length totalBytes: Int = MemoryLayout<T>.size) -> [UInt8] {
     let valuePointer = UnsafeMutablePointer<T>.allocate(capacity: 1)
     valuePointer.pointee = value
 
@@ -271,5 +243,6 @@ fileprivate func arrayOfBytes<T: FixedWidthInteger>(value: T, length totalBytes:
 
 // Small convenience to get an ArraySlice of a full array
 fileprivate extension Array {
-    var bytesSlice: ArraySlice<Element> { self[startIndex..<endIndex] }
+    var audioMusicPlayer_bytesSlice: ArraySlice<Element> { self[startIndex..<endIndex] }
 }
+

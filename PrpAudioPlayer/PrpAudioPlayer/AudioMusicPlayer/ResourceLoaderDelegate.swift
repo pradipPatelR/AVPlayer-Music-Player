@@ -15,7 +15,7 @@ final class ResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, URL
     private let downloadBufferLimit = CachingPlayerItemConfiguration.downloadBufferLimit
     private let readDataLimit = CachingPlayerItemConfiguration.readDataLimit
 
-    private lazy var fileHandle = MediaFileHandle(filePath: saveFilePath)
+    private lazy var fileHandle = MediaFileHandle(filePath: self.saveFilePath)
 
     private var session: URLSession?
     private var response: URLResponse?
@@ -34,107 +34,110 @@ final class ResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, URL
         self.owner = owner
         super.init()
 
-        NotificationCenter.default.addObserver(self, selector: #selector(handleAppWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(self.handleAppWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
     }
 
     deinit {
-        invalidateAndCancelSession()
+        self.invalidateAndCancelSession()
     }
 
     // MARK: AVAssetResourceLoaderDelegate
 
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
-        if session == nil {
+        if self.session == nil {
             // If we're playing from an url, we need to download the file.
             // We start loading the file on first request only.
-            startDataRequest(with: url)
+            self.startDataRequest(with: self.url)
         }
 
-        pendingRequests.insert(loadingRequest)
-        processPendingRequests()
+        self.pendingRequests.insert(loadingRequest)
+        self.processPendingRequests()
         return true
     }
 
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
-        pendingRequests.remove(loadingRequest)
+        self.pendingRequests.remove(loadingRequest)
     }
 
     // MARK: URLSessionDelegate
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        bufferData.append(data)
-        writeBufferDataToFileIfNeeded()
-        processPendingRequests()
-        DispatchQueue.main.async {
-            self.owner?.delegate?.playerItem?(self.owner!, didDownloadBytesSoFar: self.fileHandle.fileSize, outOf: Int(dataTask.countOfBytesExpectedToReceive))
+        self.bufferData.append(data)
+        self.writeBufferDataToFileIfNeeded()
+        self.processPendingRequests()
+        DispatchQueue.main.async { [weak self] in
+            if let this = self,
+               let ownr = this.owner {
+                ownr.delegate?.playerItem?(ownr, didDownloadBytesSoFar: this.fileHandle.fileSize, outOf: Int(dataTask.countOfBytesExpectedToReceive))
+            }
         }
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         self.response = response
-        processPendingRequests()
+        self.processPendingRequests()
         completionHandler(.allow)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
-            downloadFailed(with: error)
+            self.downloadFailed(with: error)
             return
         }
 
-        if bufferData.count > 0 {
-            fileHandle.append(data: bufferData)
+        if self.bufferData.count > 0 {
+            self.fileHandle.append(data: self.bufferData)
         }
 
-        let error = verifyResponse()
+        let error = self.verifyResponse()
 
         guard error == nil else {
-            downloadFailed(with: error!)
+            self.downloadFailed(with: error!)
             return
         }
 
-        downloadComplete()
+        self.downloadComplete()
     }
 
     // MARK: Internal methods
 
     func startDataRequest(with url: URL) {
-        guard session == nil else { return }
+        guard self.session == nil else { return }
 
         let configuration = URLSessionConfiguration.default
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         var urlRequest = URLRequest(url: url)
-        owner?.urlRequestHeaders?.forEach { urlRequest.setValue($0.value, forHTTPHeaderField: $0.key) }
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-        session?.dataTask(with: urlRequest).resume()
+        self.owner?.urlRequestHeaders?.forEach { urlRequest.setValue($0.value, forHTTPHeaderField: $0.key) }
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.session?.dataTask(with: urlRequest).resume()
     }
 
     func invalidateAndCancelSession() {
-        session?.invalidateAndCancel()
+        self.session?.invalidateAndCancel()
     }
 
     // MARK: Private methods
 
     private func processPendingRequests() {
-        lock.lock()
-        defer { lock.unlock() }
+        self.lock.lock()
+        defer { self.lock.unlock() }
 
         // Filter out the unfullfilled requests
-        let requestsFulfilled: Set<AVAssetResourceLoadingRequest> = pendingRequests.filter {
-            fillInContentInformationRequest($0.contentInformationRequest)
-            guard haveEnoughDataToFulfillRequest($0.dataRequest!) else { return false }
+        let requestsFulfilled: Set<AVAssetResourceLoadingRequest> = self.pendingRequests.filter {
+            self.fillInContentInformationRequest($0.contentInformationRequest)
+            guard self.haveEnoughDataToFulfillRequest($0.dataRequest!) else { return false }
 
             $0.finishLoading()
             return true
         }
 
         // Remove fulfilled requests from pending requests
-        requestsFulfilled.forEach { pendingRequests.remove($0) }
+        requestsFulfilled.forEach { self.pendingRequests.remove($0) }
     }
 
     private func fillInContentInformationRequest(_ contentInformationRequest: AVAssetResourceLoadingContentInformationRequest?) {
         // Do we have response from the server?
-        guard let response = response else { return }
+        guard let response = self.response else { return }
 
         contentInformationRequest?.contentType = response.mimeType
         contentInformationRequest?.contentLength = response.expectedContentLength
@@ -145,43 +148,46 @@ final class ResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, URL
         let requestedOffset = Int(dataRequest.requestedOffset)
         let requestedLength = dataRequest.requestedLength
         let currentOffset = Int(dataRequest.currentOffset)
-        let bytesCached = fileHandle.fileSize
+        let bytesCached = self.fileHandle.fileSize
 
         // Is there enough data cached to fulfill the request?
         guard bytesCached > currentOffset else { return false }
 
         // Data length to be loaded into memory with maximum size of readDataLimit.
-        let bytesToRespond = min(bytesCached - currentOffset, requestedLength, readDataLimit)
+        let bytesToRespond = min(bytesCached - currentOffset, requestedLength, self.readDataLimit)
 
         // Read data from disk and pass it to the dataRequest
-        guard let data = fileHandle.readData(withOffset: currentOffset, forLength: bytesToRespond) else { return false }
+        guard let data = self.fileHandle.readData(withOffset: currentOffset, forLength: bytesToRespond) else { return false }
         dataRequest.respond(with: data)
 
         return bytesCached >= requestedLength + requestedOffset
     }
 
     private func writeBufferDataToFileIfNeeded() {
-        lock.lock()
-        defer { lock.unlock() }
+        self.lock.lock()
+        defer { self.lock.unlock() }
 
-        guard bufferData.count >= downloadBufferLimit else { return }
+        guard self.bufferData.count >= self.downloadBufferLimit else { return }
 
-        fileHandle.append(data: bufferData)
-        bufferData = Data()
+        self.fileHandle.append(data: self.bufferData)
+        self.bufferData = Data()
     }
 
     private func downloadComplete() {
-        processPendingRequests()
+        self.processPendingRequests()
 
-        isDownloadComplete = true
+        self.isDownloadComplete = true
 
-        DispatchQueue.main.async {
-            self.owner?.delegate?.playerItem?(self.owner!, didFinishDownloadingFileAt: self.saveFilePath)
+        DispatchQueue.main.async { [weak self] in
+            if let this = self,
+               let ownr = this.owner {
+                ownr.delegate?.playerItem?(ownr, didFinishDownloadingFileAt: this.saveFilePath)
+            }
         }
     }
 
     private func verifyResponse() -> NSError? {
-        guard let response = response as? HTTPURLResponse else { return nil }
+        guard let response = self.response as? HTTPURLResponse else { return nil }
 
         let shouldVerifyDownloadedFileSize = CachingPlayerItemConfiguration.shouldVerifyDownloadedFileSize
         let minimumExpectedFileSize = CachingPlayerItemConfiguration.minimumExpectedFileSize
@@ -189,27 +195,30 @@ final class ResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, URL
 
         if response.statusCode >= 400 {
             error = NSError(domain: "Failed downloading asset. Reason: response status code \(response.statusCode).", code: response.statusCode, userInfo: nil)
-        } else if shouldVerifyDownloadedFileSize && response.expectedContentLength != -1 && response.expectedContentLength != fileHandle.fileSize {
-            error = NSError(domain: "Failed downloading asset. Reason: wrong file size, expected: \(response.expectedContentLength), actual: \(fileHandle.fileSize).", code: response.statusCode, userInfo: nil)
-        } else if minimumExpectedFileSize > 0 && minimumExpectedFileSize > fileHandle.fileSize {
-            error = NSError(domain: "Failed downloading asset. Reason: file size \(fileHandle.fileSize) is smaller than minimumExpectedFileSize", code: response.statusCode, userInfo: nil)
+        } else if shouldVerifyDownloadedFileSize && response.expectedContentLength != -1 && response.expectedContentLength != self.fileHandle.fileSize {
+            error = NSError(domain: "Failed downloading asset. Reason: wrong file size, expected: \(response.expectedContentLength), actual: \(self.fileHandle.fileSize).", code: response.statusCode, userInfo: nil)
+        } else if minimumExpectedFileSize > 0 && minimumExpectedFileSize > self.fileHandle.fileSize {
+            error = NSError(domain: "Failed downloading asset. Reason: file size \(self.fileHandle.fileSize) is smaller than minimumExpectedFileSize", code: response.statusCode, userInfo: nil)
         }
 
         return error
     }
 
     private func downloadFailed(with error: Error) {
-        fileHandle.deleteFile()
+        self.fileHandle.deleteFile()
 
-        DispatchQueue.main.async {
-            self.owner?.delegate?.playerItem?(self.owner!, downloadingFailedWith: error)
+        DispatchQueue.main.async { [weak self] in
+            if let this = self,
+               let ownr = this.owner {
+                ownr.delegate?.playerItem?(ownr, downloadingFailedWith: error)
+            }
         }
     }
 
     @objc private func handleAppWillTerminate() {
         // We need to only remove the file if it hasn't been fully downloaded
-        guard isDownloadComplete == false else { return }
+        guard self.isDownloadComplete == false else { return }
 
-        fileHandle.deleteFile()
+        self.fileHandle.deleteFile()
     }
 }
